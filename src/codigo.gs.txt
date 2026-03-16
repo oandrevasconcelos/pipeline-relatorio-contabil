@@ -1,0 +1,83 @@
+/**
+ * CONFIGURAÇÕES DO SISTEMA
+ * Altere o e-mail abaixo para o destinatário padrão.
+ */
+const EMAIL_DESTINO = 'seu-email@exemplo.com';
+
+/**
+ * Função principal para execução automática (Trigger).
+ * Coleta anexos do mês anterior e envia o link da pasta.
+ */
+function salvarEEnviarAnexosEmail() {
+  const hoje = new Date();
+  hoje.setMonth(hoje.getMonth() - 1);
+  
+  const mes = hoje.getMonth() + 1; 
+  const ano = hoje.getFullYear();
+  
+  executarPipeline(mes, ano);
+}
+
+/**
+ * Motor principal do pipeline de documentação contábil.
+ * @param {number} mes - Mês para busca (1-12)
+ * @param {number} ano - Ano para busca (Ex: 2025)
+ */
+function executarPipeline(mes, ano) {
+  const dataInicio = ano + '/' + (mes < 10 ? '0' + mes : mes) + '/01';
+  
+  // Lógica para definir a data de término da busca
+  let proximoMes = mes + 1;
+  let proximoAno = ano;
+  if (proximoMes > 12) {
+    proximoMes = 1;
+    proximoAno++;
+  }
+  const dataFim = proximoAno + '/' + (proximoMes < 10 ? '0' + proximoMes : proximoMes) + '/01';
+
+  console.log(`Iniciando busca: ${dataInicio} até ${dataFim}`);
+
+  // 1. Extração: Pesquisa anexos no Gmail
+  const pesquisa = `has:attachment after:${dataInicio} before:${dataFim}`;
+  const conversas = GmailApp.search(pesquisa);
+
+  if (conversas.length === 0) {
+    console.log('Nenhum anexo encontrado para o período.');
+    return;
+  }
+
+  // 2. Preparação: Cria pasta organizada no Drive
+  const nomePasta = `Relatório Contábil - ${mes < 10 ? '0' + mes : mes}/${ano}`;
+  const pasta = DriveApp.createFolder(nomePasta);
+
+  // 3. Transformação e Carga: Organização de arquivos com nome único
+  conversas.forEach(conversa => {
+    conversa.getMessages().forEach(mensagem => {
+      mensagem.getAttachments().forEach(anexo => {
+        // Lógica de renomeação para evitar duplicidade
+        const prefixo = Utilities.formatDate(new Date(), "GMT-3", "yyyyMMdd-HHmmss");
+        const nomeUnico = `${prefixo}_${anexo.getName()}`;
+        
+        pasta.createFile(anexo.copyBlob()).setName(nomeUnico);
+      });
+    });
+  });
+
+  // 4. Governança: Atribui permissão ao responsável
+  pasta.addEditor(EMAIL_DESTINO);
+
+  // 5. Notificação: Envio de relatório via e-mail
+  const assunto = `Relatório Contábil Mensal - ${mes < 10 ? '0' + mes : mes}/${ano}`;
+  const corpo = `Pipeline finalizado com sucesso.\n\nLink para acesso aos arquivos: ${pasta.getUrl()}`;
+  
+  GmailApp.sendEmail(EMAIL_DESTINO, assunto, corpo);
+  console.log(`Relatório enviado com sucesso: ${pasta.getUrl()}`);
+}
+
+/**
+ * Função utilitária para execuções manuais retroativas.
+ */
+function executarManual() {
+  // Exemplo: Buscar novembro de 2025
+  executarPipeline(11, 2025);
+}
